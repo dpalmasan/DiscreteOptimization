@@ -1,8 +1,13 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+# TODO: Implement a Branch and Bounding approach, since it seems the CP based
+# approach is too slow. My bet would be doing Greedy + Branch and Bounding to
+# at least find a solution that passes the assignment.
+
 from ConstraintProgramming import *
 from utils import PriorityQueue
+import operator
 import time
 from math import ceil
 
@@ -184,26 +189,22 @@ class GraphColoringGreedy(object):
 
         self.__ordered_by_neighborcount.reverse()
 
-    def solve(self):
-        j = self.__ordered_by_neighborcount[0]
+    def solve_first_fit(self):
         self.__solution = {x: None for x in range(self.__node_count)}
-        self.__solution[j] = 0
+        self.__solution[0] = 0
 
         for i in xrange(1, self.__node_count):
-            j = self.__ordered_by_neighborcount[i]
-            possible_colorings = []
-            for neighbor in self.__neighbors[j]:
+            non_possible_colorings = set([])
+            for neighbor in self.__neighbors[i]:
                 if self.__solution[neighbor] is not None:
-                    possible_colorings.append(self.__solution[neighbor])
+                    non_possible_colorings.add(self.__solution[neighbor])
 
-            if len(possible_colorings) == 0:
-                self.__solution[j] = 0
-            else:
-                current_min = min(possible_colorings)
-                if current_min == 0:
-                    self.__solution[j] = max(possible_colorings) + 1
-                else:
-                    self.__solution[j] = current_min - 1
+            color = 0
+            while self.__solution[i] is None:
+                if color not in non_possible_colorings:
+                    self.__solution[i] = color
+                color += 1
+
         return self.__solution
 
     def solve_welsh_powell(self):
@@ -225,37 +226,259 @@ class GraphColoringGreedy(object):
 
         return self.__solution
 
+    def solve_large_degree_ordering(self):
+        self.__solution = {x: None for x in range(self.__node_count)}
+        non_colored_list = list(self.__ordered_by_neighborcount)
+        while len(non_colored_list) != 0:
+            node = non_colored_list.pop(0)
+
+            non_possible_colorings = set([])
+            for neighbor in self.__neighbors[node]:
+                if self.__solution[neighbor] is not None:
+                    non_possible_colorings.add(self.__solution[neighbor])
+
+            color = 0
+            while self.__solution[node] is None:
+                if color not in non_possible_colorings:
+                    self.__solution[node] = color
+                color += 1
+
+        return self.__solution
+
+    def solve_incidence_degree_ordering(self):
+        self.__solution = {x: None for x in range(self.__node_count)}
+        selected_node = self.__ordered_by_neighborcount[0]
+        self.__solution[selected_node] = 0
+        uncolored_nodes = self.__node_count - 1
+
+        while uncolored_nodes > 0:
+            adjacent_colored_count = {}
+            for node in self.__solution:
+                if self.__solution[node] is None:
+                    colored_neighbors = 0
+                    for neighbor in self.__neighbors[node]:
+                        if self.__solution[neighbor] is not None:
+                            colored_neighbors += 1
+                    adjacent_colored_count[node] = colored_neighbors
+            maximum_color_count = max(adjacent_colored_count.values())
+            maximum_color_count_set = set([])
+            for node in adjacent_colored_count:
+                if adjacent_colored_count[node] == maximum_color_count:
+                    maximum_color_count_set.add(node)
+
+            if len(maximum_color_count_set) == 1:
+                selected_node = maximum_color_count_set.pop()
+            else:
+                maximum_degree = -1
+                selected_node = None
+                for node in maximum_color_count_set:
+                    if self.__neighborcount[node] > maximum_degree:
+                        maximum_degree = self.__neighborcount[node]
+                        selected_node = node
+            color = 0
+            while self.__solution[selected_node] is None:
+                coloreable = True
+                for neighbor in self.__neighbors[selected_node]:
+                    if self.__solution[neighbor] == color:
+                        coloreable = False
+                        break
+                if coloreable:
+                    self.__solution[selected_node] = color
+                    uncolored_nodes -= 1
+                color += 1
+
+        return self.__solution
+
+    def solve_DSATUR(self):
+
+        # Initialization
+        self.__solution = {x: None for x in range(self.__node_count)}
+
+        # Selecting first node, the node with the maximum degree
+        selected_node = self.__ordered_by_neighborcount[0]
+        self.__solution[selected_node] = 0
+        uncolored_nodes = self.__node_count - 1
+
+        while uncolored_nodes > 0:
+            # Calculate the number of adjacent vertices with different
+            # colors for every uncolored vertex
+            adjacent_different_color_count = {}
+            for node in self.__solution:
+                if self.__solution[node] is None:
+                    colored_neighbors = set([])
+                    for neighbor in self.__neighbors[node]:
+                        if self.__solution[neighbor] is not None:
+                            colored_neighbors.add(neighbor)
+                    adjacent_different_color_count[node] = len(colored_neighbors)
+
+            maximum_color_count = max(adjacent_different_color_count.values())
+            maximum_color_count_set = set([])
+            for node in adjacent_different_color_count:
+                if adjacent_different_color_count[node] == maximum_color_count:
+                    maximum_color_count_set.add(node)
+
+            if len(maximum_color_count_set) == 1:
+                selected_node = maximum_color_count_set.pop()
+            else:
+                maximum_degree = -1
+                selected_node = None
+                for node in maximum_color_count_set:
+                    if self.__neighborcount[node] > maximum_degree:
+                        maximum_degree = self.__neighborcount[node]
+                        selected_node = node
+            color = 0
+            while self.__solution[selected_node] is None:
+                coloreable = True
+                for neighbor in self.__neighbors[selected_node]:
+                    if self.__solution[neighbor] == color:
+                        coloreable = False
+                        break
+                if coloreable:
+                    self.__solution[selected_node] = color
+                    uncolored_nodes -= 1
+                color += 1
+        return self.__solution
+
+
+    def solve_RLF(self):
+
+        # Initialization
+        self.__solution = {x: None for x in range(self.__node_count)}
+
+        # Selecting first node, the node with the maximum degree
+        selected_node = self.__ordered_by_neighborcount[0]
+        active_color = 0
+        uncolored_nodes = self.__node_count
+        while uncolored_nodes > 0:
+            self.__solution[selected_node] = active_color
+            uncolored_nodes = self.__node_count - 1
+
+            # Adjacent vertices of selected vertex are added to U
+            U = set([])
+            for node in xrange(self.__node_count):
+                if node != selected_node and selected_node in self.__neighbors[node] and self.__solution[node] is None:
+                    U.add(node)
+
+            # The vertices which are not adjacent to selected node are added to V
+            V = set([])
+            for node in xrange(self.__node_count):
+                if selected_node not in self.__neighbors[node] and node != selected_node and self.__solution[node] is None:
+                    V.add(node)
+
+            # Counting vertices adjacent that are in U
+            while len(V) != 0:
+                adjacent_vertex_u = {}
+                for v in V:
+                    count = 0
+                    for adjacent in self.__neighbors[v]:
+                        if adjacent in U:
+                            count += 1
+                    adjacent_vertex_u[v] = count
+
+                selected_node = max(adjacent_vertex_u.iteritems(), key=operator.itemgetter(1))[0]
+                self.__solution[selected_node] = active_color
+                uncolored_nodes -= 1
+                if selected_node in V:
+                    V.remove(selected_node)
+                U.add(selected_node)
+                for node in self.__neighbors[selected_node]:
+                    if node in V:
+                        V.remove(node)
+                    U.add(node)
+
+            active_color += 1
+            uncolored_adjacent_vertices = {}
+            for node in self.__solution:
+                if self.__solution[node] is None:
+                    count = 0
+                    for neighbor in self.__neighbors[node]:
+                        if self.__solution[neighbor] is None:
+                            count += 1
+                    uncolored_adjacent_vertices[node] = count
+
+            if len(uncolored_adjacent_vertices) == 0:
+                return self.__solution
+            maximum_uncolored_count = max(uncolored_adjacent_vertices.values())
+            maximum_uncolored_count_set = set([])
+            for node in uncolored_adjacent_vertices:
+                if uncolored_adjacent_vertices[node] == maximum_uncolored_count:
+                    maximum_uncolored_count_set.add(node)
+
+            if len(maximum_uncolored_count_set) == 1:
+                selected_node = maximum_uncolored_count_set.pop()
+            else:
+                maximum_degree = -1
+                selected_node = None
+                for node in maximum_uncolored_count_set:
+                    if self.__neighborcount[node] > maximum_degree:
+                        maximum_degree = self.__neighborcount[node]
+                        selected_node = node
+
+        return self.__solution
+
 if __name__ == "__main__":
     print "========================="
     print "Testing CP Solver"
     print "========================="
-    cp = GraphColoringCP(5, 6, [(0,1), (0,2), (0,3), (2, 3), (2, 4), (3, 4)], 3)
+    cp = GraphColoringCP(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)], 3)
     AC3(cp)
     sol = backtracking_search(cp)
-    solution = [sol["X%d" % i] for i in xrange(5)]
+    solution = [sol["X%d" % i] for i in xrange(7)]
     print sol
     print len(set(solution))
     print solution
     print "========================="
     print "Testing Greedy Solver"
     print "========================="
-    gc = GraphColoringGreedy(5, 6, [(0,1), (0,2), (0,3), (2, 3), (2, 4), (3, 4)])
-    sol = gc.solve()
+    gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
+    sol = gc.solve_first_fit()
     print sol
-    solution = [sol[i] for i in xrange(5)]
+    solution = [sol[i] for i in xrange(7)]
     print len(set(solution))
     print solution
     print "========================="
     print "Testing Welsh Powell"
     print "========================="
-    gc = GraphColoringGreedy(5, 6, [(0,1), (0,2), (0,3), (2, 3), (2, 4), (3, 4)])
-    sol = gc.solve_welsh_powell()
-    print sol
-    solution = [sol[i] for i in xrange(5)]
-    print len(set(solution))
-    print solution
     gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
     sol = gc.solve_welsh_powell()
+    print sol
+    solution = [sol[i] for i in xrange(7)]
+    print len(set(solution))
+    print solution
+    print "========================="
+    print "Testing Large Degree"
+    print "========================="
+    gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
+    sol = gc.solve_large_degree_ordering()
+    print sol
+    solution = [sol[i] for i in xrange(7)]
+    print len(set(solution))
+    print solution
+    print "========================="
+    print "Testing Degree Ordering"
+    print "========================="
+    gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
+    sol = gc.solve_incidence_degree_ordering()
+    print sol
+    solution = [sol[i] for i in xrange(7)]
+    print len(set(solution))
+    print solution
+
+    print "========================="
+    print "Testing DSATUR"
+    print "========================="
+    gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
+    sol = gc.solve_DSATUR()
+    print sol
+    solution = [sol[i] for i in xrange(7)]
+    print len(set(solution))
+    print solution
+
+    print "========================="
+    print "Testing RLF"
+    print "========================="
+    gc = GraphColoringGreedy(7, 9, [(0,1), (0,2), (1,2), (1,6), (2,3), (2,4), (3,5), (4,5), (4,6)])
+    sol = gc.solve_RLF()
     print sol
     solution = [sol[i] for i in xrange(7)]
     print len(set(solution))

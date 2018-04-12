@@ -22,15 +22,40 @@ def solve_it(input_data):
     #----------------------------------------------------------
     # FIXME: Add real solution (This is what I modified)
     gc = GraphColoringGreedy(node_count, edge_count, edges)
-    sol = gc.solve_welsh_powell()
+    sol = gc.solve_first_fit()
     solution = [sol[i] for i in xrange(node_count)]
-    upper_bound = len(set(solution))
-    cp = GraphColoringCP(node_count, edge_count, edges, 8)
-    AC3(cp)
-    sol = backtracking_search(cp)
-    solution = [sol["X%d" % i] for i in xrange(node_count)]
-
     obj = len(set(solution))
+
+    sol = gc.solve_welsh_powell()
+    solution_tmp = [sol[i] for i in xrange(node_count)]
+    if len(set(solution_tmp)) < obj:
+        obj = len(set(solution_tmp))
+        solution = solution_tmp
+
+    sol = gc.solve_large_degree_ordering()
+    solution_tmp = [sol[i] for i in xrange(node_count)]
+    if len(set(solution_tmp)) < obj:
+        obj = len(set(solution_tmp))
+        solution = solution_tmp
+
+    sol = gc.solve_incidence_degree_ordering()
+    solution_tmp = [sol[i] for i in xrange(node_count)]
+    if len(set(solution_tmp)) < obj:
+        obj = len(set(solution_tmp))
+        solution = solution_tmp
+
+    sol = gc.solve_DSATUR()
+    solution_tmp = [sol[i] for i in xrange(node_count)]
+    if len(set(solution_tmp)) < obj:
+        obj = len(set(solution_tmp))
+        solution = solution_tmp
+
+    sol = gc.solve_RLF()
+    solution_tmp = [sol[i] for i in xrange(node_count)]
+    if len(set(solution_tmp)) < obj:
+        obj = len(set(solution_tmp))
+        solution = solution_tmp
+
     # After this line I didn't modified anything
     #----------------------------------------------------------
 
@@ -40,7 +65,7 @@ def solve_it(input_data):
 
     # prepare the solution in the specified output format
     # output_data = str(node_count) + ' ' + str(0) + '\n'
-    output_data = str(obj) + ' ' + str(1) + '\n'
+    output_data = str(obj) + ' ' + str(0) + '\n'
     output_data += ' '.join(map(str, solution))
 
     return output_data
